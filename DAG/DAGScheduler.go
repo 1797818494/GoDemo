@@ -192,8 +192,8 @@ func NewScheduler(d *DAG, workerCount int) *Scheduler {
 	return &Scheduler{
 		dag:              d,
 		readyQueue:       &PriorityQueue{},
-		readySignal:      make(chan struct{}, workerCount), // Buffered signal channel
-		completedTasks:   make(chan *Task, len(d.Tasks)),   // Buffered channel
+		readySignal:      make(chan struct{}, len(d.Tasks)), // Buffered signal channel
+		completedTasks:   make(chan *Task, len(d.Tasks)),    // Buffered channel
 		dependencyCounts: make(map[string]int),
 		workerCount:      workerCount,
 		totalTaskCount:   len(d.Tasks),
@@ -237,12 +237,11 @@ func (s *Scheduler) Run() error {
 	if initialReadyCount == 0 && s.totalTaskCount > 0 {
 		return fmt.Errorf("DAG has no starting tasks (possible cycle?)")
 	}
-	go func(initialReadyCount int) {
-		for i := 0; i < initialReadyCount; i++ {
 
-			s.readySignal <- struct{}{}
-		}
-	}(initialReadyCount)
+	for i := 0; i < initialReadyCount; i++ {
+		s.readySignal <- struct{}{}
+	}
+
 	// Send initial signals to wake up workers
 
 	// 3. Start worker goroutines
@@ -344,13 +343,9 @@ func (s *Scheduler) completionMonitor() {
 				fmt.Printf("Task '%s' is now ready (Priority: %d)\n", readyTask.ID, readyTask.priority)
 
 				// Signal a worker that there's a new task in the queue
-				select {
-				case s.readySignal <- struct{}{}:
-					// Signal sent
-				default:
-					// Channel is full, workers are likely busy or already signaled
-					// No need to block here, signals will queue up or workers will poll
-				}
+
+				s.readySignal <- struct{}{}
+
 			}
 		}
 		s.mu.Unlock()
@@ -426,7 +421,7 @@ func main() {
 	fmt.Println("--- Starting Scheduler (Critical Path Optimized) ---")
 
 	// Create a scheduler with a worker pool size
-	workerPoolSize := 1 // Adjust based on your available cores/desired parallelism
+	workerPoolSize := 2 // Adjust based on your available cores/desired parallelism
 	scheduler := NewScheduler(dag, workerPoolSize)
 
 	// Run the scheduler
